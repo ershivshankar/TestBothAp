@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Control</string>
+    <string name="action_refresh">Refresh</string>
+    <string name="online_devices">Online Devices</string>
+    <string name="offline_devices">Offline Devices</string>
+    <string name="no_online_devices">No online devices</string>
+    <string name="no_offline_devices">No offline devices</string>
+    <string name="screen_monitor">Screen Monitor</string>
+    <string name="microphone">Microphone</string>
+    <string name="device_audio">Device Audio</string>
+    <string name="remote_control">Remote Control</string>
+    <string name="keyboard">Keyboard</string>
+    <string name="device_info">Device Info</string>
+    <string name="send_text_title">Send Text</string>
+    <string name="send">Send</string>
+    <string name="cancel">Cancel</string>
+    <string name="connected">Connected</string>
+    <string name="reconnecting">Reconnecting…</string>
+    <string name="no_streams_active">No streams active</string>
+</resources>

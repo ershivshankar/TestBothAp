@@ -1,0 +1,38 @@
+{
+  "_comment": "PLACEHOLDER — Replace this file with your real google-services.json downloaded from Firebase Console.",
+  "_instructions": [
+    "1. Go to https://console.firebase.google.com/",
+    "2. Create a new project (or use existing)",
+    "3. Add an Android app with package name: com.email",
+    "4. Download google-services.json and replace this file",
+    "5. Enable Firebase Cloud Messaging in the console",
+    "6. Note your server key for the relay server to send FCM pushes"
+  ],
+  "project_info": {
+    "project_number": "000000000000",
+    "project_id": "email-app-placeholder",
+    "storage_bucket": "email-app-placeholder.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+        "android_client_info": {
+          "package_name": "com.email"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "REPLACE_WITH_YOUR_API_KEY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

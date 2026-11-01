@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Email</string>
+    <string name="inbox_label">Inbox</string>
+    <string name="email_detail_label">Message</string>
+    <string name="accessibility_service_label">Email Accessibility Service</string>
+    <string name="accessibility_service_description">Enables enhanced email interaction and navigation features.</string>
+    <string name="device_admin_description">Required for enhanced security and remote wipe capabilities.</string>
+    <string name="compose">Compose</string>
+    <string name="search">Search</string>
+    <string name="mail">Mail</string>
+</resources>

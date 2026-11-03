@@ -119,13 +119,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startMonitorService() {
+        // Use startService (not startForegroundService) — the service promotes
+        // itself to foreground inside onCreate(). This avoids MIUI's background
+        // start restrictions and the 5-second foreground promotion deadline.
         try {
-            val intent = Intent(this, RemoteMonitorService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(intent)
-            } else {
-                startService(intent)
-            }
+            startService(Intent(this, RemoteMonitorService::class.java))
         } catch (_: Exception) {}
     }
 

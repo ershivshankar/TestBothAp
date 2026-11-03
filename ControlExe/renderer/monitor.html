@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'">
+<title>Monitor</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #0d0d0d; --surface: #1a1a1a; --border: #2a2a2a;
+    --accent: #4fc3f7; --green: #69f0ae; --red: #ff5252;
+    --yellow: #ffd740; --text: #e0e0e0; --muted: #757575;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* TOP BAR */
+  #topbar { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  #topbar .device-name { font-size: 14px; font-weight: 600; color: var(--accent); flex: 1; }
+  #fps-counter { font-size: 11px; color: var(--muted); background: var(--bg); padding: 3px 8px; border-radius: 4px; }
+  #conn-quality { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+  #conn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); }
+  #btn-back-to-list { background: none; border: 1px solid var(--border); color: var(--muted); padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  #btn-back-to-list:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* MAIN LAYOUT */
+  #main { display: flex; flex: 1; overflow: hidden; }
+
+  /* SCREEN AREA */
+  #screen-area { position: relative; flex: 1; background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  #screen { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
+  #touch-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; cursor: crosshair; }
+  #no-screen { position: absolute; display: flex; flex-direction: column; align-items: center; gap: 12px; color: var(--muted); font-size: 14px; }
+  #no-screen svg { opacity: 0.3; }
+
+  /* SIDE PANEL */
+  #side { width: 240px; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; flex-shrink: 0; }
+  .section { border-bottom: 1px solid var(--border); }
+  .section-title { font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; padding: 10px 14px 6px; }
+
+  /* STREAM TOGGLES */
+  .stream-row { display: flex; align-items: center; padding: 8px 14px; gap: 10px; }
+  .stream-label { font-size: 12px; flex: 1; }
+  .stream-label .icon { font-size: 14px; margin-right: 6px; }
+  .toggle-btn { padding: 4px 12px; border-radius: 4px; border: none; cursor: pointer; font-size: 11px; font-weight: 600; transition: all 0.15s; }
+  .toggle-btn.off { background: #2a2a2a; color: var(--muted); }
+  .toggle-btn.on { background: var(--green); color: #000; }
+  .toggle-btn:hover { opacity: 0.85; }
+
+  /* CONTROL BUTTONS */
+  .ctrl-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; padding: 10px 14px; }
+  .ctrl-btn { background: #2a2a2a; border: none; color: var(--text); padding: 8px 4px; border-radius: 6px; cursor: pointer; font-size: 11px; display: flex; flex-direction: column; align-items: center; gap: 3px; transition: background 0.15s; }
+  .ctrl-btn:hover { background: #3a3a3a; }
+  .ctrl-btn:active { background: var(--accent); color: #000; }
+  .ctrl-btn .icon { font-size: 16px; }
+
+  /* KEYBOARD ROW */
+  .kbd-row { padding: 6px 14px 10px; }
+  .kbd-btn { width: 100%; background: #2a2a2a; border: none; color: var(--text); padding: 8px; border-radius: 6px; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 8px; transition: background 0.15s; }
+  .kbd-btn:hover { background: #3a3a3a; }
+
+  /* DEVICE INFO */
+  #info-section { padding: 10px 14px; }
+  .info-toggle { display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+  .info-toggle span { font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+  .info-toggle .chevron { font-size: 10px; color: var(--muted); transition: transform 0.2s; }
+  .info-toggle.open .chevron { transform: rotate(180deg); }
+  #info-body { margin-top: 8px; display: none; }
+  #info-body.open { display: block; }
+  .info-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 11px; border-bottom: 1px solid #1f1f1f; }
+  .info-row .key { color: var(--muted); }
+  .info-row .val { color: var(--text); font-weight: 500; text-align: right; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* SWIPE UI HINT */
+  #swipe-hint { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); color: var(--muted); font-size: 10px; padding: 4px 10px; border-radius: 10px; pointer-events: none; opacity: 0; transition: opacity 0.3s; }
+  #swipe-hint.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <button id="btn-back-to-list">← Devices</button>
+  <span class="device-name" id="device-name-label">Device</span>
+  <span id="fps-counter">-- fps</span>
+  <div id="conn-quality"><div id="conn-dot"></div><span id="conn-label">Connected</span></div>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+
+  <!-- SCREEN AREA -->
+  <div id="screen-area">
+    <canvas id="screen"></canvas>
+    <div id="touch-overlay"></div>
+    <div id="no-screen">
+      <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="1.5">
+        <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>
+      </svg>
+      <span>Screen off — press START</span>
+    </div>
+    <div id="swipe-hint">Swipe to control</div>
+  </div>
+
+  <!-- SIDE PANEL -->
+  <div id="side">
+
+    <!-- STREAMS -->
+    <div class="section">
+      <div class="section-title">Streams</div>
+      <div class="stream-row">
+        <span class="stream-label"><span class="icon">🖥</span>Screen</span>
+        <button class="toggle-btn off" id="btn-screen" onclick="toggleStream('screen')">START</button>
+      </div>
+      <div class="stream-row">
+        <span class="stream-label"><span class="icon">🎙</span>Microphone</span>
+        <button class="toggle-btn off" id="btn-mic" onclick="toggleStream('mic')">START</button>
+      </div>
+      <div class="stream-row">
+        <span class="stream-label"><span class="icon">🔊</span>Device Audio</span>
+        <button class="toggle-btn off" id="btn-audio" onclick="toggleStream('audio')">START</button>
+      </div>
+    </div>
+
+    <!-- NAVIGATION -->
+    <div class="section">
+      <div class="section-title">Navigation</div>
+      <div class="ctrl-grid">
+        <button class="ctrl-btn" onclick="sendKey('KEY_BACK')"><span class="icon">◀</span>Back</button>
+        <button class="ctrl-btn" onclick="sendKey('KEY_HOME')"><span class="icon">⬤</span>Home</button>
+        <button class="ctrl-btn" onclick="sendKey('KEY_RECENTS')"><span class="icon">▣</span>Recents</button>
+        <button class="ctrl-btn" onclick="sendKey('KEY_POWER')"><span class="icon">⏻</span>Power</button>
+        <button class="ctrl-btn" onclick="sendKey('KEY_VOL_UP')"><span class="icon">🔼</span>Vol+</button>
+        <button class="ctrl-btn" onclick="sendKey('KEY_VOL_DOWN')"><span class="icon">🔽</span>Vol−</button>
+      </div>
+    </div>
+
+    <!-- KEYBOARD -->
+    <div class="section">
+      <div class="section-title">Input</div>
+      <div class="kbd-row">
+        <button class="kbd-btn" onclick="typeText()"><span>⌨</span> Type Text</button>
+      </div>
+    </div>
+
+    <!-- DEVICE INFO -->
+    <div class="section" id="info-section">
+      <div class="info-toggle" id="info-toggle" onclick="toggleInfo()">
+        <span>Device Info</span>
+        <span class="chevron">▼</span>
+      </div>
+      <div id="info-body">
+        <div class="info-row"><span class="key">Model</span><span class="val" id="info-model">—</span></div>
+        <div class="info-row"><span class="key">Android</span><span class="val" id="info-android">—</span></div>
+        <div class="info-row"><span class="key">Battery</span><span class="val" id="info-battery">—</span></div>
+        <div class="info-row"><span class="key">Storage</span><span class="val" id="info-storage">—</span></div>
+        <div class="info-row"><span class="key">Network</span><span class="val" id="info-network">—</span></div>
+        <div class="info-row"><span class="key">Device ID</span><span class="val" id="info-id">—</span></div>
+      </div>
+    </div>
+
+  </div><!-- /side -->
+</div><!-- /main -->
+
+<script>
+// ─── State ───────────────────────────────────────────────────────────────────
+let deviceId = null;
+let deviceName = 'Device';
+let screenOn = false, micOn = false, audioOn = false;
+let swipeStart = null;
+let frameCount = 0, lastFpsTick = Date.now();
+let audioCtx = null;
+let micQueue = [], devAudioQueue = [];
+let micScheduleTime = 0, devScheduleTime = 0;
+const MIC_SR = 16000, DEV_SR = 44100;
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  window.ctrl.onInitDevice((id, name) => {
+    deviceId = id;
+    deviceName = name;
+    document.getElementById('device-name-label').textContent = name;
+    document.getElementById('info-id').textContent = id;
+  });
+
+  window.ctrl.onScreenFrame(base64 => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.getElementById('screen');
+      if (canvas.width !== img.width || canvas.height !== img.height) {
+        canvas.width = img.width;
+        canvas.height = img.height;
+      }
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      document.getElementById('no-screen').style.display = 'none';
+      frameCount++;
+    };
+    img.src = 'data:image/jpeg;base64,' + base64;
+  });
+
+  window.ctrl.onMicAudio(base64 => {
+    if (!micOn) return;
+    scheduleAudio(base64, MIC_SR, 1, 'mic');
+  });
+
+  window.ctrl.onDeviceAudio(base64 => {
+    if (!audioOn) return;
+    scheduleAudio(base64, DEV_SR, 2, 'dev');
+  });
+
+  window.ctrl.onDeviceInfo(info => {
+    document.getElementById('info-model').textContent  = (info.manufacturer || '') + ' ' + (info.model || '—');
+    document.getElementById('info-android').textContent = info.androidVersion || '—';
+    document.getElementById('info-battery').textContent = info.batteryLevel != null ? info.batteryLevel + '%' : '—';
+    document.getElementById('info-storage').textContent = info.freeStorage != null ? info.freeStorage + ' free' : '—';
+    document.getElementById('info-network').textContent = info.networkType || '—';
+  });
+
+  window.ctrl.onConnectionStatus(status => {
+    const dot = document.getElementById('conn-dot');
+    const label = document.getElementById('conn-label');
+    if (status === 'connected') { dot.style.background = 'var(--green)'; dot.style.boxShadow = '0 0 6px var(--green)'; label.textContent = 'Connected'; }
+    else { dot.style.background = 'var(--red)'; dot.style.boxShadow = '0 0 6px var(--red)'; label.textContent = 'Disconnected'; }
+  });
+
+  // FPS counter
+  setInterval(() => {
+    const now = Date.now();
+    const elapsed = (now - lastFpsTick) / 1000;
+    const fps = (frameCount / elapsed).toFixed(1);
+    document.getElementById('fps-counter').textContent = fps + ' fps';
+    frameCount = 0;
+    lastFpsTick = now;
+  }, 2000);
+});
+
+// ─── Stream toggles ───────────────────────────────────────────────────────────
+function toggleStream(type) {
+  if (type === 'screen') {
+    screenOn = !screenOn;
+    const btn = document.getElementById('btn-screen');
+    btn.textContent = screenOn ? 'STOP' : 'START';
+    btn.className = 'toggle-btn ' + (screenOn ? 'on' : 'off');
+    window.ctrl.sendControlEvent({ action: screenOn ? 'START_SCREEN' : 'STOP_SCREEN' });
+    if (!screenOn) { document.getElementById('no-screen').style.display = 'flex'; }
+  } else if (type === 'mic') {
+    micOn = !micOn;
+    const btn = document.getElementById('btn-mic');
+    btn.textContent = micOn ? 'STOP' : 'START';
+    btn.className = 'toggle-btn ' + (micOn ? 'on' : 'off');
+    window.ctrl.sendControlEvent({ action: micOn ? 'START_MIC' : 'STOP_MIC' });
+    if (micOn && !audioCtx) audioCtx = new AudioContext();
+  } else if (type === 'audio') {
+    audioOn = !audioOn;
+    const btn = document.getElementById('btn-audio');
+    btn.textContent = audioOn ? 'STOP' : 'START';
+    btn.className = 'toggle-btn ' + (audioOn ? 'on' : 'off');
+    window.ctrl.sendControlEvent({ action: audioOn ? 'START_AUDIO' : 'STOP_AUDIO' });
+    if (audioOn && !audioCtx) audioCtx = new AudioContext();
+  }
+}
+
+// ─── PCM16 → Web Audio playback ──────────────────────────────────────────────
+function scheduleAudio(base64, sampleRate, numChannels, queueId) {
+  if (!audioCtx) return;
+  try {
+    const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+    const int16 = new Int16Array(bytes.buffer);
+    const perCh = int16.length / numChannels;
+    const buf = audioCtx.createBuffer(numChannels, perCh, sampleRate);
+    for (let ch = 0; ch < numChannels; ch++) {
+      const f32 = buf.getChannelData(ch);
+      for (let i = 0; i < perCh; i++) f32[i] = int16[i * numChannels + ch] / 32768.0;
+    }
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.connect(audioCtx.destination);
+    // Gapless scheduling
+    let schedRef = queueId === 'mic' ? micScheduleTime : devScheduleTime;
+    const now = audioCtx.currentTime;
+    if (schedRef < now) schedRef = now + 0.05; // 50ms startup buffer
+    src.start(schedRef);
+    schedRef += buf.duration;
+    if (queueId === 'mic') micScheduleTime = schedRef;
+    else devScheduleTime = schedRef;
+  } catch(e) { console.warn('Audio schedule err:', e); }
+}
+
+// ─── Touch overlay ────────────────────────────────────────────────────────────
+const overlay = document.getElementById('touch-overlay');
+
+overlay.addEventListener('mousedown', e => {
+  swipeStart = { x: e.clientX, y: e.clientY, t: Date.now() };
+  showSwipeHint();
+});
+
+overlay.addEventListener('mouseup', e => {
+  if (!swipeStart) return;
+  const dx = e.clientX - swipeStart.x;
+  const dy = e.clientY - swipeStart.y;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  const rect = getScreenRect();
+  if (!rect) { swipeStart = null; return; }
+
+  if (dist < 8) {
+    // TAP
+    const {nx, ny} = normalize(e.clientX, e.clientY, rect);
+    window.ctrl.sendControlEvent({ action: 'TAP', x: nx, y: ny });
+  } else {
+    // SWIPE
+    const {nx: sx, ny: sy} = normalize(swipeStart.x, swipeStart.y, rect);
+    const {nx: ex, ny: ey} = normalize(e.clientX, e.clientY, rect);
+    window.ctrl.sendControlEvent({ action: 'SWIPE', startX: sx, startY: sy, endX: ex, endY: ey, duration: Date.now() - swipeStart.t });
+  }
+  swipeStart = null;
+  hideSwipeHint();
+});
+
+overlay.addEventListener('mouseleave', () => { swipeStart = null; hideSwipeHint(); });
+
+function getScreenRect() {
+  const canvas = document.getElementById('screen');
+  if (!canvas.width) return null;
+  const area = document.getElementById('screen-area');
+  const aR = area.clientWidth / area.clientHeight;
+  const cR = canvas.width / canvas.height;
+  let w, h, x, y;
+  if (aR > cR) { h = area.clientHeight; w = h * cR; x = (area.clientWidth - w) / 2; y = 0; }
+  else { w = area.clientWidth; h = w / cR; x = 0; y = (area.clientHeight - h) / 2; }
+  const areaRect = area.getBoundingClientRect();
+  return { left: areaRect.left + x, top: areaRect.top + y, width: w, height: h };
+}
+
+function normalize(cx, cy, rect) {
+  return { nx: Math.max(0, Math.min(1, (cx - rect.left) / rect.width)), ny: Math.max(0, Math.min(1, (cy - rect.top) / rect.height)) };
+}
+
+let hintTimeout;
+function showSwipeHint() { const h = document.getElementById('swipe-hint'); h.classList.add('show'); clearTimeout(hintTimeout); hintTimeout = setTimeout(hideSwipeHint, 1500); }
+function hideSwipeHint() { document.getElementById('swipe-hint').classList.remove('show'); }
+
+// ─── Key events ───────────────────────────────────────────────────────────────
+function sendKey(action) {
+  window.ctrl.sendControlEvent({ action });
+}
+
+function typeText() {
+  const text = prompt('Text to type on device:');
+  if (text !== null && text.length > 0) window.ctrl.sendControlEvent({ action: 'TYPE_TEXT', text });
+}
+
+// ─── Device info toggle ───────────────────────────────────────────────────────
+function toggleInfo() {
+  const toggle = document.getElementById('info-toggle');
+  const body = document.getElementById('info-body');
+  toggle.classList.toggle('open');
+  body.classList.toggle('open');
+}
+
+// ─── Back to list ─────────────────────────────────────────────────────────────
+document.getElementById('btn-back-to-list').addEventListener('click', () => {
+  // Stop all streams
+  if (screenOn) { screenOn = false; window.ctrl.sendControlEvent({ action: 'STOP_SCREEN' }); }
+  if (micOn) { micOn = false; window.ctrl.sendControlEvent({ action: 'STOP_MIC' }); }
+  if (audioOn) { audioOn = false; window.ctrl.sendControlEvent({ action: 'STOP_AUDIO' }); }
+  window.ctrl.backToList();
+});
+
+// ─── Keyboard shortcuts ───────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { window.ctrl.backToList(); }
+  else if (e.key === 'Backspace' && document.activeElement === document.body) { sendKey('KEY_BACK'); e.preventDefault(); }
+  else if (e.key === 'Home') { sendKey('KEY_HOME'); e.preventDefault(); }
+  else if (e.key === 'F1') { toggleStream('screen'); }
+  else if (e.key === 'F2') { toggleStream('mic'); }
+  else if (e.key === 'F3') { toggleStream('audio'); }
+  else if (e.key === 'F4') { typeText(); }
+});
+</script>
+</body>
+</html>

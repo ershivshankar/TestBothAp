@@ -3,3 +3,7 @@
 local.properties
 node_modules/
 *.apk
+
+ControlExe/dist/
+ControlExe/node_modules/
+release-apks/
